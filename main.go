@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -30,7 +32,11 @@ func main() {
 }
 
 func encode(w http.ResponseWriter, r *http.Request) {
-
+	p1 := person{First: "Jenny"}
+	err := json.NewEncoder(w).Encode(p1)
+	if err != nil {
+		fmt.Println("Encoded bad data:", err)
+	}
 }
 
 func decode(w http.ResponseWriter, r *http.Request) {
