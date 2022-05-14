@@ -2,12 +2,15 @@ package main
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha512"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,12 +29,9 @@ func (uc *UserClaims) Valid() error {
 	return nil
 }
 
-var key []byte
-
-func init() {
-	for i := byte(1); i <= 64; i++ {
-		key = append(key, i)
-	}
+type key struct {
+	key     []byte
+	created time.Time
 }
 
 func main() {
@@ -65,7 +65,7 @@ func comparePassword(passowrd string, hashedPass []byte) error {
 }
 
 func signMessage(msg []byte) ([]byte, error) {
-	h := hmac.New(sha512.New, key)
+	h := hmac.New(sha512.New, keys[currentKeyId].key)
 	_, err := h.Write(msg)
 	if err != nil {
 		return nil, fmt.Errorf("Error signing message: %w", err)
@@ -85,19 +85,48 @@ func checkSig(msg, sig []byte) (bool, error) {
 
 func createToken(c *UserClaims) (string, error) {
 	t := jwt.NewWithClaims(jwt.SigningMethodHS512, c)
-	signedToken, err := t.SignedString(key)
+	signedToken, err := t.SignedString(keys[currentKeyId].key)
 	if err != nil {
 		return "", fmt.Errorf("Error in createToken function: %w", err)
 	}
 	return signedToken, nil
 }
 
+func generateNewKey() error {
+	newKey := make([]byte, 64)
+	_, err := io.ReadFull(rand.Reader, newKey)
+	if err != nil {
+		return fmt.Errorf("Error generating new key: %w", err)
+	}
+	uid, err := uuid.NewRandom()
+	if err != nil {
+		return fmt.Errorf("Error generating new key ID: %w", err)
+	}
+	keys[uid.String()] = key{key: newKey, created: time.Now()}
+	currentKeyId = uid.String()
+	return nil
+}
+
+var currentKeyId string
+var keys map[string]key
+
 func parseToken(signedToken string) (*UserClaims, error) {
 	t, err := jwt.ParseWithClaims(signedToken, &UserClaims{}, func(t *jwt.Token) (any, error) {
 		if t.Method.Alg() != jwt.SigningMethodHS512.Alg() {
 			return nil, fmt.Errorf("Invalid signing algorithm")
 		}
-		return key, nil
+
+		kid, ok := t.Header["kid"].(string)
+		if !ok {
+			return nil, fmt.Errorf("Invalid key ID")
+		}
+
+		k, ok := keys[kid]
+		if !ok {
+			return nil, fmt.Errorf("Invalid key ID")
+		}
+
+		return k.key, nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Error in parseToken function: %w", err)
