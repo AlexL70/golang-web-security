@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 
 	"golang.org/x/crypto/bcrypt"
@@ -17,13 +19,18 @@ func main() {
 	key, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	logErrorIfAny(err)
 	key = key[:16]
-	encrypted, err := cipherMsg(key, []byte(msg))
+	iv := make([]byte, aes.BlockSize) //  initialization vector
+	_, err = io.ReadFull(rand.Reader, iv)
+	if err != nil {
+		log.Fatalln(fmt.Errorf("Error randomizing initialization vector: %w", err))
+	}
+	encrypted, err := encryptMsg(key, []byte(msg), iv)
 	logErrorIfAny(err)
 	encoded := encode(encrypted)
 	fmt.Println(encoded)
 	decoded, err := decode(encoded)
 	logErrorIfAny(err)
-	decrypted, err := cipherMsg(key, decoded)
+	decrypted, err := encryptMsg(key, decoded, iv)
 	logErrorIfAny(err)
 	fmt.Println(string(decrypted))
 }
@@ -34,16 +41,11 @@ func logErrorIfAny(err error) {
 	}
 }
 
-func cipherMsg(key []byte, msg []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("Error getting new cipher")
-	}
-	s := cipher.NewCTR(block, make([]byte, aes.BlockSize) /*initialization vector*/)
+func encryptMsg(key []byte, msg []byte, iv []byte) ([]byte, error) {
 	buff := &bytes.Buffer{}
-	sw := cipher.StreamWriter{
-		S: s,
-		W: buff,
+	sw, err := encryptWriter(buff, key, iv)
+	if err != nil {
+		return nil, fmt.Errorf("Error getting writer: %w", err)
 	}
 	defer sw.Close()
 	_, err = sw.Write([]byte(msg))
@@ -51,6 +53,18 @@ func cipherMsg(key []byte, msg []byte) ([]byte, error) {
 		return nil, fmt.Errorf("Error writing message to buffer: %w", err)
 	}
 	return buff.Bytes(), nil
+}
+
+func encryptWriter(wrt io.Writer, key []byte, iv []byte) (*cipher.StreamWriter, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("Error getting new cipher: %w", err)
+	}
+	s := cipher.NewCTR(block, iv)
+	return &cipher.StreamWriter{
+		S: s,
+		W: wrt,
+	}, nil
 }
 
 func encode(msg []byte) string {
