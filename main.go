@@ -1,23 +1,53 @@
 package main
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"io"
-	"log"
-	"os"
+	"net/http"
 )
 
 func main() {
-	f, err := os.Open("sample-file.txt")
-	if err != nil {
-		log.Fatalln(fmt.Errorf("Error opening file: %w", err))
+	http.HandleFunc("/", index)
+	http.HandleFunc("/submit", submitEmail)
+	http.ListenAndServe(":8080", nil)
+}
+
+func index(w http.ResponseWriter, r *http.Request) {
+	html := `<!DOCTYPE html>
+	<html lang="en">
+	<head>
+	    <meta charset="UTF-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	    <title>HMAC example</title>
+	</head>
+	<body>
+		<form action="/submit" method="post">
+			<input type="email" name="email" />
+			<input type="submit" />
+		</form>
+	</body>
+	</html>`
+	io.WriteString(w, html)
+}
+
+func getCode(msg string) string {
+
+}
+
+func submitEmail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/", http.StatusMethodNotAllowed)
+		return
 	}
-	defer f.Close()
-	h := sha256.New()
-	_, err = io.Copy(h, f)
-	if err != nil {
-		log.Fatalln(fmt.Errorf("Error copying file to the hash: %w", err))
+
+	email := r.FormValue("email")
+	if email == "" {
+		http.Redirect(w, r, "/", http.StatusBadRequest)
+		return
 	}
-	fmt.Printf("%x\n%[1]T\n", h.Sum(nil))
+
+	c := http.Cookie{
+		Name:  "session",
+		Value: "",
+	}
 }
