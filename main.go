@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -12,6 +15,10 @@ func main() {
 }
 
 func index(w http.ResponseWriter, r *http.Request) {
+	c, err := r.Cookie("session")
+	if err != nil {
+		c = &http.Cookie{}
+	}
 	html := `<!DOCTYPE html>
 	<html lang="en">
 	<head>
@@ -21,6 +28,7 @@ func index(w http.ResponseWriter, r *http.Request) {
 	    <title>HMAC example</title>
 	</head>
 	<body>
+	<p> Cookie value: ` + c.Value + `</p>
 		<form action="/submit" method="post">
 			<input type="email" name="email" />
 			<input type="submit" />
@@ -31,7 +39,9 @@ func index(w http.ResponseWriter, r *http.Request) {
 }
 
 func getCode(msg string) string {
-
+	h := hmac.New(sha256.New, []byte("i love thursdays when it rains 8732 inches"))
+	h.Write([]byte(msg))
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func submitEmail(w http.ResponseWriter, r *http.Request) {
@@ -46,8 +56,14 @@ func submitEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	code := getCode(email)
+
+	//	hash/digest
 	c := http.Cookie{
 		Name:  "session",
-		Value: "",
+		Value: code + "|" + email,
 	}
+
+	http.SetCookie(w, &c)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
