@@ -1,13 +1,18 @@
 package main
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"time"
+
+	"github.com/golang-jwt/jwt/v4"
 )
+
+type MyCustomClaims struct {
+	jwt.StandardClaims
+	Email string `json:"email"`
+}
 
 func main() {
 	http.HandleFunc("/", index)
@@ -17,26 +22,25 @@ func main() {
 
 func index(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie("session")
+	cEmail := ""
 	if err != nil {
 		c = &http.Cookie{}
 	}
 
-	isEqual := true
-	cEmail := ""
-	cCode := ""
-	code := ""
+	//	if c.Value != "" {
+	//		parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	//		parsedToken, _, err := parser.ParseUnverified(c.Value, nil)
+	//		if err == nil {
+	//			cEmail = parsedToken.Claims.(MyCustomClaims).Email
+	//		}
+	//	}
 	message := "Not logged in"
-	xs := strings.SplitN(c.Value, "|", 2)
-	if len(xs) == 2 {
-		cCode = xs[0]
-		cEmail = xs[1]
-
-		code = getCode(cEmail)
-		isEqual = hmac.Equal([]byte(code), []byte(cCode))
-		if isEqual {
-			message = "Logged in"
-		}
-	}
+	//	token, err := getJWT(cEmail)
+	//	if err != nil {
+	//		message = err.Error()
+	//	} else if cEmail != "" && c.Value == token {
+	//		message = "Logged in"
+	//	}
 
 	html := `<!DOCTYPE html>
 	<html lang="en">
@@ -58,10 +62,21 @@ func index(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, html)
 }
 
-func getCode(msg string) string {
-	h := hmac.New(sha256.New, []byte("i love thursdays when it rains 8732 inches"))
-	h.Write([]byte(msg))
-	return fmt.Sprintf("%x", h.Sum(nil))
+func getJWT(msg string) (string, error) {
+	myKey := []byte("i love thursdays when it rains 8732 inches")
+	claims := MyCustomClaims{
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: time.Now().Add(24 * time.Hour).Unix(),
+			Issuer:    "alexander.levinson.70@gmail.com",
+		},
+		Email: msg,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims)
+	s, err := token.SignedString(myKey)
+	if err != nil {
+		return "", fmt.Errorf("Error signing string: %w", err)
+	}
+	return s, nil
 }
 
 func submitEmail(w http.ResponseWriter, r *http.Request) {
@@ -76,12 +91,16 @@ func submitEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code := getCode(email)
+	token, err := getJWT(email)
+	if err != nil {
+		http.Error(w, fmt.Errorf("Error getting token: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
 
 	//	hash/digest
 	c := http.Cookie{
 		Name:  "session",
-		Value: code + "|" + email,
+		Value: token,
 	}
 
 	http.SetCookie(w, &c)
