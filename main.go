@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,8 @@ type MyCustomClaims struct {
 	jwt.StandardClaims
 	Email string `json:"email"`
 }
+
+const myKey = "i love thursdays when it rains 8732 inches"
 
 func main() {
 	http.HandleFunc("/", index)
@@ -27,20 +30,20 @@ func index(w http.ResponseWriter, r *http.Request) {
 		c = &http.Cookie{}
 	}
 
-	//	if c.Value != "" {
-	//		parser := jwt.NewParser(jwt.WithoutClaimsValidation())
-	//		parsedToken, _, err := parser.ParseUnverified(c.Value, nil)
-	//		if err == nil {
-	//			cEmail = parsedToken.Claims.(MyCustomClaims).Email
-	//		}
-	//	}
 	message := "Not logged in"
-	//	token, err := getJWT(cEmail)
-	//	if err != nil {
-	//		message = err.Error()
-	//	} else if cEmail != "" && c.Value == token {
-	//		message = "Logged in"
-	//	}
+	if c.Value != "" {
+		parsedToken, err := jwt.ParseWithClaims(c.Value, &MyCustomClaims{}, func(t *jwt.Token) (interface{}, error) {
+			return []byte(myKey), nil
+		})
+		if err == nil || errors.Is(err, jwt.ValidationError{}) {
+			if claims, ok := parsedToken.Claims.(*MyCustomClaims); ok {
+				cEmail = claims.Email
+				if parsedToken.Valid {
+					message = "Logged In"
+				}
+			}
+		}
+	}
 
 	html := `<!DOCTYPE html>
 	<html lang="en">
@@ -63,16 +66,15 @@ func index(w http.ResponseWriter, r *http.Request) {
 }
 
 func getJWT(msg string) (string, error) {
-	myKey := []byte("i love thursdays when it rains 8732 inches")
 	claims := MyCustomClaims{
 		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(24 * time.Hour).Unix(),
+			ExpiresAt: time.Now().Add(10 * time.Second).Unix(),
 			Issuer:    "alexander.levinson.70@gmail.com",
 		},
 		Email: msg,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims)
-	s, err := token.SignedString(myKey)
+	s, err := token.SignedString([]byte(myKey))
 	if err != nil {
 		return "", fmt.Errorf("Error signing string: %w", err)
 	}
