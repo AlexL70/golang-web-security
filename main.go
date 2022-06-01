@@ -33,6 +33,9 @@ func index(w http.ResponseWriter, r *http.Request) {
 	message := "Not logged in"
 	if c.Value != "" {
 		parsedToken, err := jwt.ParseWithClaims(c.Value, &MyCustomClaims{}, func(t *jwt.Token) (interface{}, error) {
+			if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+				return nil, fmt.Errorf("Signing method is wrong. Must be HS256.")
+			}
 			return []byte(myKey), nil
 		})
 		if err == nil || errors.Is(err, jwt.ValidationError{}) {
